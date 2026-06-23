@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "energydb-inspect"
+version = "0.7.0"
+description = "Visual inspector for energydb: Postgres structure + ClickHouse values, mirrored live next to a marimo demo notebook."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "energydb>=0.7",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "clickhouse-connect>=0.8",
+    "psycopg[binary]>=3.1",
+    "psycopg-pool>=3.2",
+    "python-dotenv>=1.0",
+    "marimo>=0.9",
+    "pandas>=2.2",
+    "numpy",
+    "shapely",
+]
+
+[project.scripts]
+energydb-inspect = "energydb_inspect.cli:main"
+
+[dependency-groups]
+dev = ["ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["energydb_inspect"]
+
+# The built dashboard (energydb_inspect/_static, produced by `bun run build` at
+# publish time) is gitignored, so force-include it in the wheel via `artifacts`.
+[tool.hatch.build]
+artifacts = ["energydb_inspect/_static/**"]
+
+[tool.ruff]
+# marimo notebooks intentionally use trailing expressions as cell outputs (B018)
+# and place imports inside cells (I001); marimo manages them, so skip linting.
+extend-exclude = ["energydb_inspect/notebooks"]
+
+# Project-level marimo config (merged over the user's ~/.config/marimo). Lazy
+# execution is what makes the demo work node-by-node: running the setup cell does
+# NOT cascade and rebuild the whole tree — downstream cells are marked stale, so
+# you run them one at a time and watch each node appear in the Inspector.
+[tool.marimo.runtime]
+on_cell_change = "lazy"

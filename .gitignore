@@ -1,0 +1,8 @@
+# Local-only / generated artifacts (node_modules / .venv / dist / __pycache__ are
+# covered by the repo-root .gitignore). The committed `.env.example` documents the
+# variables; the built dashboard is produced at build/publish time.
+.env
+uv.lock
+.ruff_cache/
+energydb_inspect/_static/
+energydb_inspect/notebooks/__marimo__/

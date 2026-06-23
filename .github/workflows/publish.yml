@@ -1,0 +1,41 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-n-publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    # This 'pypi' must match the Environment name in PyPI's trusted-publisher settings.
+    environment: pypi
+    permissions:
+      id-token: write # Mandatory for OIDC trusted publishing
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The dashboard is a Vite/React app; build it and bundle it into the package
+      # before building the wheel (energydb_inspect/_static is force-included).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build dashboard
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Bundle dashboard into the package
+        run: |
+          rm -rf energydb_inspect/_static
+          cp -r web/dist energydb_inspect/_static
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Build wheel and sdist
+        run: uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
