@@ -14,6 +14,24 @@ VITE_TARGET=wasm VITE_BASE="/" npm run build        # -> web/dist
 Set `VITE_BASE` to the sub-path it is served under: `/` for a domain root, or e.g. `/inspect/` if
 served under that path.
 
+On NixOS (no `bun`/`node` on `PATH`), front it with `nix shell`:
+
+```sh
+cd web
+nix shell nixpkgs#bun -c bash -c 'bun install && VITE_TARGET=wasm bun run build'   # -> web/dist
+```
+
+## Preview it locally
+
+Opening `web/dist/index.html` directly (`file://`) shows a blank page: the app loads its assets over
+HTTP, so it must be served. Use the built-in preview server:
+
+```sh
+cd web
+nix shell nixpkgs#bun -c bun run preview        # http://localhost:4173
+# or, with node on PATH: npx serve dist
+```
+
 ## Cloudflare Pages
 
 Connect the repo in the Cloudflare dashboard and set:

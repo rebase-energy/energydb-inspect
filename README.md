@@ -4,7 +4,7 @@ A local visual inspector for [energydb](https://github.com/rebase-energy/energyd
 dashboard over your Postgres + ClickHouse showing the asset tree, timeseries plots, a map of the
 assets, and the raw rows plus the SQL "under the hood".
 
-![energydb-inspect](docs/screenshot.png)
+![The energydb-inspect dashboard: the asset tree, the timeseries plot for a selected series, and the ClickHouse SQL under the hood](docs/dashboard-plot.png)
 
 ## Inspect your energydb
 
@@ -16,6 +16,8 @@ uvx energydb-inspect --pg-dsn postgresql://… --ch-url http://…
 ```
 
 The dashboard opens at http://localhost:8000.
+
+![Selecting a node shows its Postgres metadata, the map of asset footprints, and the row behind it](docs/dashboard-map.png)
 
 You can also pass the connection via the environment or a `.env` in the working directory. Prefer
 this for real credentials, so they don't show up in `ps`/shell history:
@@ -64,20 +66,11 @@ The repo ships a guided [marimo](https://marimo.io) notebook,
 **separately** with marimo (from a checkout):
 
 ```sh
-uv run --extra notebook marimo edit energydb_inspect/notebooks/demo.py
+uv run --extra notebook python -m marimo edit energydb_inspect/notebooks/demo.py
 ```
 
 It opens at http://localhost:2718. Run the cells top to bottom against a writable database (the
 local-db above) and watch the tree, map and plots fill in live in the dashboard.
-
-> By default marimo runs every cell as soon as the notebook opens. To step through it instead (and
-> watch each node appear), set in `~/.config/marimo/marimo.toml`:
->
-> ```toml
-> [runtime]
-> auto_instantiate = false
-> on_cell_change = "lazy"
-> ```
 
 ## Develop from source
 
@@ -100,9 +93,3 @@ On NixOS, `bun`/`node` may not be on PATH; use `nix shell nixpkgs#bun -c bun run
 
 A zero-backend build of the dashboard exists for hosting a public "what is energydb" demo. See
 [docs/HOSTING.md](docs/HOSTING.md).
-
-## Layout
-
-- `energydb_inspect/` — the Python package: read-only FastAPI + the `energydb-inspect` CLI + the
-  bundled dashboard. the example notebook lives under `notebooks/`.
-- `web/` — the React + Vite dashboard.
