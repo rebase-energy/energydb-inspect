@@ -65,13 +65,13 @@ export default function WebApp() {
         {!isMobile && (
           <a
             className="own-data"
-            href="https://github.com/rebase-energy/energydb"
+            href="https://github.com/rebase-energy/energydb-inspect"
             target="_blank"
             rel="noreferrer"
-            title="Open energydb on GitHub"
+            title="energydb-inspect on GitHub"
           >
-            <span className="own-data-label">Run on your own energydb instance:</span>
-            <code className="own-data-cmd">docker run -p 8000:8000 -p 2718:2718 ghcr.io/rebase-energy/energydb-inspector</code>
+            <span className="own-data-label">Run it on your own energydb:</span>
+            <code className="own-data-cmd">uvx energydb-inspect</code>
           </a>
         )}
         <div className="header-spacer" />

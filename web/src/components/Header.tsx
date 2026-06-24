@@ -15,12 +15,6 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-// The connect-mode command: point the inspector at your own energydb. Shown only
-// in writable (demo) mode, where the user is on throwaway data and may want their
-// own. ponytail: image ref hard-coded; reconcile with the web header / README.
-const CONNECT_CMD =
-  "docker run -p 8000:8000 -e TIMEDB_PG_DSN=… -e TIMEDB_CH_URL=… ghcr.io/rebase-energy/energydb-inspector";
-
 export function Header({
   counts,
   writable,
@@ -44,10 +38,16 @@ export function Header({
       <span className="brand-title">EnergyDB Inspector</span>
 
       {writable && (
-        <span className="own-data" title="Inspect your own energydb instead of the demo data">
-          <span className="own-data-label">Inspect your own energydb:</span>
-          <code className="own-data-cmd">{CONNECT_CMD}</code>
-        </span>
+        <a
+          className="own-data"
+          href="https://github.com/rebase-energy/energydb-inspect"
+          target="_blank"
+          rel="noreferrer"
+          title="energydb-inspect on GitHub"
+        >
+          <span className="own-data-label">Run it on your own energydb:</span>
+          <code className="own-data-cmd">uvx energydb-inspect</code>
+        </a>
       )}
 
       <div className="header-spacer" />

@@ -1,38 +1,24 @@
 """Console entrypoint for ``energydb-inspect``.
 
-Serves the dashboard + the marimo notebook against the Postgres + ClickHouse you
-point it at (``TIMEDB_PG_DSN`` / ``TIMEDB_CH_URL``, from a ``.env`` in the current
-directory or the environment; see ``.env.example``).
+Serves the read-only dashboard against the Postgres + ClickHouse you point it at:
+``--pg-dsn`` / ``--ch-url``, or ``TIMEDB_PG_DSN`` / ``TIMEDB_CH_URL`` from a ``.env``
+in the current directory or the environment (see ``.env.example``).
 
-    energydb-inspect                 # dashboard :8000 + notebook :2718
-    energydb-inspect --no-notebook   # dashboard only (e.g. read-only on a real DB)
+    energydb-inspect                              # dashboard :8000 (TIMEDB_* / .env)
+    energydb-inspect --pg-dsn ... --ch-url ...    # pass the connection explicitly
 
 Reads are always allowed; the Reset button needs ``INSPECT_WRITABLE=1`` (use it
-only against throwaway/dev databases).
+only against throwaway/dev databases). The example notebook is a separate thing you
+run with marimo; see the README.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
-import tempfile
-from importlib import resources
-from pathlib import Path
 
 from dotenv import load_dotenv
-
-
-def _writable_notebook() -> Path:
-    """Copy the bundled notebook to a writable temp file so marimo can autosave."""
-    dst = Path(tempfile.mkdtemp(prefix="energydb-inspect-")) / "demo.py"
-    with resources.as_file(
-        resources.files("energydb_inspect") / "notebooks" / "demo.py"
-    ) as src:
-        shutil.copy(src, dst)
-    return dst
 
 
 def main() -> None:
@@ -43,17 +29,20 @@ def main() -> None:
         "--port", type=int, default=8000, help="dashboard + API port (default 8000)"
     )
     parser.add_argument(
-        "--notebook-port",
-        type=int,
-        default=2718,
-        help="marimo notebook port (default 2718)",
+        "--pg-dsn", help="Postgres DSN (overrides TIMEDB_PG_DSN / .env)"
     )
     parser.add_argument(
-        "--no-notebook", action="store_true", help="don't start the marimo notebook"
+        "--ch-url", help="ClickHouse URL (overrides TIMEDB_CH_URL / .env)"
     )
     args = parser.parse_args()
 
     load_dotenv()  # TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the cwd
+    # Explicit args win over .env/env. Note: a DSN on the command line is visible in
+    # `ps`/shell history, so prefer .env for real credentials.
+    if args.pg_dsn:
+        os.environ["TIMEDB_PG_DSN"] = args.pg_dsn
+    if args.ch_url:
+        os.environ["TIMEDB_CH_URL"] = args.ch_url
     if not os.environ.get("TIMEDB_PG_DSN") or not os.environ.get("TIMEDB_CH_URL"):
         print(
             "warning: TIMEDB_PG_DSN / TIMEDB_CH_URL are not set; the dashboard will be empty.\n"
@@ -61,34 +50,10 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    marimo = None
-    if not args.no_notebook:
-        nb = _writable_notebook()
-        marimo = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "marimo",
-                "edit",
-                str(nb),
-                "--host",
-                "127.0.0.1",
-                "-p",
-                str(args.notebook_port),
-                "--headless",
-                "--no-token",
-            ]
-        )
-        print(f"  notebook  → http://localhost:{args.notebook_port}")
-
     print(f"  dashboard → http://localhost:{args.port}\n")
-    try:
-        import uvicorn
+    import uvicorn
 
-        uvicorn.run("energydb_inspect.app:app", host="127.0.0.1", port=args.port)
-    finally:
-        if marimo is not None:
-            marimo.terminate()
+    uvicorn.run("energydb_inspect.app:app", host="127.0.0.1", port=args.port)
 
 
 if __name__ == "__main__":

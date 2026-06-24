@@ -18,10 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db, queries
 
-# Writes (the /reset endpoint) are OFF by default, so pointing the inspector at a
-# real energydb is safe: it can only read. The writable demo / local dev opt in
-# with INSPECT_WRITABLE=1 (against throwaway databases).
-WRITABLE = os.environ.get("INSPECT_WRITABLE", "").lower() in ("1", "true", "yes", "on")
+# Writability (and the remote-write guard) live in db, the single source of truth.
+WRITABLE = db.WRITABLE
 
 
 @asynccontextmanager

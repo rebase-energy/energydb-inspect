@@ -5,7 +5,7 @@ import { Header } from "./components/Header";
 import { useInspector } from "./hooks/useInspector";
 import { useTheme } from "./hooks/useTheme";
 
-// Server-backed mode (the Docker / Codespaces tool): polls the FastAPI backend
+// Server-backed mode (the local DB-scanning tool): polls the FastAPI backend
 // and shows the server-only extras (the Under-the-hood SQL + raw rows dock).
 export default function App() {
   const { theme, toggle } = useTheme();

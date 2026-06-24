@@ -102,14 +102,53 @@ function findSeriesById(tree: TreeNode[], edges: Edge[], id: number): Series | n
   return null;
 }
 
+/** The node- or edge-owned series most recently written (max last_change), so the
+ *  server dashboard can follow live writes. Null when nothing carries data. */
+function latestChangedSeries(
+  tree: TreeNode[],
+  edges: Edge[],
+): { node: TreeNode | null; edge: Edge | null; series: Series; lastChange: number } | null {
+  let best: { node: TreeNode | null; edge: Edge | null; series: Series; lastChange: number } | null = null;
+  for (const n of walkNodes(tree)) {
+    for (const s of n.series) {
+      if (s.has_data && s.last_change > (best?.lastChange ?? 0)) {
+        best = { node: n, edge: null, series: s, lastChange: s.last_change };
+      }
+    }
+  }
+  for (const e of edges) {
+    for (const s of e.series) {
+      if (s.has_data && s.last_change > (best?.lastChange ?? 0)) {
+        best = { node: null, edge: e, series: s, lastChange: s.last_change };
+      }
+    }
+  }
+  return best;
+}
+
 export function Dashboard({ mode, version, tree, edges, theme, focus, view, mapHandle, mobile }: Props) {
   const [sel, setSel] = useState<Selection>(EMPTY);
   const [tab, setTab] = useState<"tree" | "map" | "plot">("tree");
 
-  const selectNode = (node: TreeNode) => setSel({ ...EMPTY, node });
-  const selectSeries = (node: TreeNode, series: Series) => setSel({ ...EMPTY, node, series });
-  const selectEdge = (edge: Edge) => setSel({ ...EMPTY, edge });
-  const selectEdgeSeries = (edge: Edge, series: Series) => setSel({ ...EMPTY, edge, series });
+  // A manual click pins the selection so the server "follow latest write" loop
+  // (below) stops moving it; clearing the selection resumes following.
+  const pinnedRef = useRef(false);
+  const selectNode = (node: TreeNode) => {
+    pinnedRef.current = true;
+    setSel({ ...EMPTY, node });
+  };
+  const selectSeries = (node: TreeNode, series: Series) => {
+    pinnedRef.current = true;
+    setSel({ ...EMPTY, node, series });
+  };
+  const selectEdge = (edge: Edge) => {
+    pinnedRef.current = true;
+    setSel({ ...EMPTY, edge });
+  };
+  const selectEdgeSeries = (edge: Edge, series: Series) => {
+    pinnedRef.current = true;
+    setSel({ ...EMPTY, edge, series });
+  };
 
   // Drag the gutter between the tree and the right side.
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -130,6 +169,7 @@ export function Dashboard({ mode, version, tree, edges, theme, focus, view, mapH
   useEffect(() => {
     if (tree.length === 0) {
       initRef.current = false;
+      pinnedRef.current = false; // re-arm follow-the-write after a Reset
       return;
     }
     if (initRef.current) return;
@@ -182,13 +222,24 @@ export function Dashboard({ mode, version, tree, edges, theme, focus, view, mapH
         const cur = findSeriesById(tree, edges, next.series.series_id);
         if (!cur || !cur.has_data) next = { ...next, series: null };
       }
-      if (anyData && !next.series && !dismissedRef.current) {
+      if (anyData && !next.series && !dismissedRef.current && mode === "web") {
         const hit = firstDataSeries(tree);
         if (hit) next = { node: hit.node, series: hit.series, edge: null };
       }
       return next;
     });
-  }, [tree, edges]);
+  }, [tree, edges, mode]);
+
+  // Server "follow until you click": keep the most recently written series
+  // surfaced (so the notebook's writes, including the forecast revisions landing
+  // one by one, plot themselves) until the user pins a selection by clicking. The
+  // deps re-fire only when a newer write lands; a Reset re-arms following.
+  const latest = mode === "server" ? latestChangedSeries(tree, edges) : null;
+  useEffect(() => {
+    if (mode !== "server" || pinnedRef.current || !latest) return;
+    setSel({ ...EMPTY, node: latest.node, edge: latest.edge, series: latest.series });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, latest?.series.series_id, latest?.lastChange]);
 
   // Mobile only: when a series is selected jump to the Plot tab; when it clears,
   // fall back to the Tree tab.
@@ -213,7 +264,10 @@ export function Dashboard({ mode, version, tree, edges, theme, focus, view, mapH
       onSelectSeries={selectSeries}
       onSelectEdge={selectEdge}
       onSelectEdgeSeries={selectEdgeSeries}
-      onDeselect={() => setSel(EMPTY)}
+      onDeselect={() => {
+        pinnedRef.current = false; // resume following live writes
+        setSel(EMPTY);
+      }}
       style={!mobile && treeWidth != null ? { flex: `0 0 ${treeWidth}px`, minWidth: 0 } : undefined}
       emptyHint={<EmptyCard mode={mode} />}
       fitFloor={mobile ? 0.18 : undefined}

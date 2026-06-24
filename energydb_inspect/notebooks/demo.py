@@ -16,9 +16,9 @@ def _(mo):
     mo.md("""
     # energydb
 
-    Structure lives in **Postgres**, values in **ClickHouse**. Click **Reset DB** in the inspector,
-    then run these cells top to bottom. Each one adds a node or writes data, and you watch the tree
-    grow in the other window.
+    A guided tour: build a portfolio, write timeseries, then read it back. Structure lives in
+    **Postgres**, values in **ClickHouse**. Click **Reset DB** in the inspector, then run these cells
+    top to bottom and watch the tree, map and plots fill in live in the other window.
 
     Two flags describe a series: `data_type` is what the values *mean* (actual, forecast);
     `timeseries_type` is how they are *stored*. FLAT keeps one value per timestamp, OVERLAPPING
@@ -26,6 +26,16 @@ def _(mo):
 
     (Lazy mode: running a cell marks the ones below it stale instead of re-running them, so the tree
     builds step by step.)
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## Connect and create the portfolio
+
+    Structure lives in Postgres, values in ClickHouse. Every tree hangs off a portfolio root.
     """)
     return
 
@@ -40,34 +50,48 @@ def _():
 
     from energydb_inspect import demo_data as dd
 
+    P = "Nordic"
     client = edb.Client()
     client.create()  # ensure the schema exists
-    return client, dd, edb
 
-
-@app.cell
-def _(client, edb):
-    # The portfolio root.
-    portfolio = edb.Portfolio(name="demo-portfolio")
+    portfolio = edb.Portfolio(name=P)
     client.register_tree(portfolio)
-    return (portfolio,)
+    return P, client, dd, edb, portfolio
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## A site
+
+    `.add()` returns a scope at the new node, so you can grow the tree from it. The site carries a
+    real polygon footprint (an Øresund lease area); geometry is a shapely shape that energydb stores
+    as GeoJSON and the map renders.
+    """)
+    return
 
 
 @app.cell
 def _(client, dd, edb, portfolio):
-    # A site under the portfolio. `.add()` returns a scope at the new node. The site
-    # carries a real polygon footprint (an Øresund lease area); geometry is a shapely
-    # shape that energydb stores as GeoJSON and the map renders.
     offshore = client.get_node(portfolio.name).add(
         edb.Site(name="Offshore-1", geometry=dd.OFFSHORE_AREA)
     )
     return (offshore,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## A wind turbine
+
+    Three series declared up front (metadata only, no data yet): power, wind speed, and an
+    OVERLAPPING power forecast.
+    """)
+    return
+
+
 @app.cell
 def _(edb, offshore):
-    # A wind turbine with three series declarations (metadata only, no data yet):
-    # power (actual), wind_speed (actual), and an OVERLAPPING power forecast.
     t01 = edb.wind.WindTurbine(
         name="T01",
         capacity=3.5,
@@ -91,6 +115,16 @@ def _(edb, offshore):
     return (t01,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## A second turbine
+
+    Same site, one power series.
+    """)
+    return
+
+
 @app.cell
 def _(edb, offshore):
     t02 = edb.wind.WindTurbine(
@@ -107,9 +141,18 @@ def _(edb, offshore):
     return (t02,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## A second wind farm
+
+    A smaller farm a bit north with one turbine. Each node pops into the tree as it is added.
+    """)
+    return
+
+
 @app.cell
 def _(client, dd, edb, portfolio):
-    # A second, smaller wind farm a bit north: a similar-size site with one turbine.
     offshore2 = client.get_node(portfolio.name).add(
         edb.Site(name="Offshore-2", geometry=dd.OFFSHORE2_AREA)
     )
@@ -132,9 +175,19 @@ def _(edb, offshore2):
     return (t03,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## A solar farm
+
+    A PV array and a battery, linked by a DC cable so storage and generation are wired together.
+    Edges carry geometry too: the cable is a LineString from the PV system to the battery.
+    """)
+    return
+
+
 @app.cell
 def _(client, dd, edb, portfolio):
-    # A third site (a polygon footprint): a solar farm with a PV system and a battery.
     solar_farm = client.get_node(portfolio.name).add(
         edb.Site(name="Solar-Farm-1", geometry=dd.SOLAR_FARM_AREA)
     )
@@ -184,8 +237,6 @@ def _(edb, solar_farm):
 
 @app.cell
 def _(battery, client, dd, edb, pv_system):
-    # The battery couples to the PV system via a DC link. Edges carry geometry
-    # too: a LineString from the PV system to the battery.
     client.create_edge(
         edb.grid.Line(
             name="Cable",
@@ -201,17 +252,16 @@ def _(battery, client, dd, edb, pv_system):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## write timeseries data
+    ## Write actuals
 
-    72 hours of hourly actuals, one fluent call per series. The dataframe is just
-    `valid_time` + `value`; energydb routes it to the right ClickHouse series.
+    72 hours of hourly values, one call per series. The dataframe is just `valid_time` + `value`;
+    energydb routes it to the right ClickHouse series. Select a series in the inspector to plot it.
     """)
     return
 
 
 @app.cell
-def _(array, battery, client, dd, t01, t02, t03):
-    P = "demo-portfolio"
+def _(P, array, battery, client, dd, t01, t02, t03):
     client.get_node(P, "Offshore-1", "T01").write(
         dd.wind_power(t01.capacity), name="power", data_type="actual"
     )
@@ -249,12 +299,12 @@ def _(mo):
 
 
 @app.cell
-def _(client, dd, wrote):
+def _(P, client, dd, wrote):
     import polars as _pl
 
     wrote
     _manifest = _pl.from_pandas(dd.wind_speed()).with_columns(
-        _pl.lit("demo-portfolio/Offshore-1/T01").alias("path"),
+        _pl.lit(f"{P}/Offshore-1/T01").alias("path"),
         _pl.lit("actual").alias("data_type"),
         _pl.lit("wind_speed").alias("name"),
     )
@@ -266,21 +316,22 @@ def _(client, dd, wrote):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## forecasts, revised as you learn
+    ## Forecasts, revised as you learn
 
-    The same series, forecast three times as the issue time advances. Each revision has a later
-    `knowledge_time` and covers a bounded horizon, so it clearly starts (peeling off the actual
-    where it is issued) and ends inside the window. In the inspector, select the forecast series
-    and switch to **All revisions** to watch the later issues hug the truth.
+    The same series forecast repeatedly as the issue time advances. Each revision has a later
+    `knowledge_time` and a bounded horizon, so it peels off the actual where it is issued and the
+    later issues hug the truth. They are written one at a time, so in the inspector you can select
+    the forecast series, switch to **All revisions**, and watch each issue land.
     """)
     return
 
 
 @app.cell
-def _(client, dd, t01, wrote):
+def _(P, client, dd, t01, wrote):
     from datetime import timedelta
 
-    fc = client.get_node("demo-portfolio", "Offshore-1", "T01")
+    wrote
+    fc = client.get_node(P, "Offshore-1", "T01")
     for issued_at_h, error in dd.FORECAST_REVISIONS:
         fc.write(
             dd.wind_power_forecast(t01.capacity, issued_at_h=issued_at_h, error=error),
@@ -295,7 +346,7 @@ def _(client, dd, t01, wrote):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## read it back
+    ## Read it back
 
     One call fans out over the whole subtree (a single indexed query, any depth) and returns a tidy
     frame keyed by `path`. Narrow to one series and the identity columns drop away.
@@ -304,60 +355,86 @@ def _(mo):
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
     # Whole-portfolio fan-out: every `power` actual under the portfolio, in one frame.
     forecast_written
-    client.get_node("demo-portfolio").read(data_type="actual", name="power")
+    client.get_node(P).read(data_type="actual", name="power")
     return
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
     # A single series: identity columns (path/data_type/name) are stripped.
     forecast_written
-    client.get_node("demo-portfolio", "Offshore-1", "T01").read(
-        data_type="actual", name="power"
-    )
+    client.get_node(P, "Offshore-1", "T01").read(data_type="actual", name="power")
     return
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
     # output="by_path" returns a dict keyed by SeriesKey(path, data_type, name).
     forecast_written
-    client.get_node("demo-portfolio").read(
-        data_type="actual", name="power", output="by_path"
-    )
+    client.get_node(P).read(data_type="actual", name="power", output="by_path")
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## read the past (as-of)
+    ## Units convert on read
 
-    `include_knowledge_time=True` surfaces the revision dimension; `end_known=` reads the series as
-    it was known at a past instant, so you only see the revisions issued by then. This is what
-    powers backtests without look-ahead bias.
+    `power` is stored in its canonical unit (MW). Ask for another unit and pint rescales it for you.
+    Here MW to GW (a factor of 1000). `write(..., unit=...)` converts on the way in too.
     """)
     return
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
+    import polars as _pl
+
+    forecast_written
+    _t01 = client.get_node(P, "Offshore-1", "T01")
+    _mw = _t01.read(data_type="actual", name="power")
+    _gw = _t01.read(data_type="actual", name="power", unit="GW")
+    _pl.DataFrame(
+        {
+            "valid_time": _mw["valid_time"],
+            "power_MW": _mw["value"],
+            "power_GW": _gw["value"],
+        }
+    ).head(6)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## Read the past (as-of)
+
+    Every revision is kept, stamped with the `knowledge_time` it was issued at.
+    `include_knowledge_time=True` surfaces that dimension; `end_known=` reads the series as it was
+    known at a past instant, so you only see the revisions issued by then. This is what powers
+    backtests without look-ahead bias.
+    """)
+    return
+
+
+@app.cell
+def _(P, client, forecast_written):
     # All revisions at once: the same valid_times, stacked by knowledge_time.
     forecast_written
-    client.get_node("demo-portfolio", "Offshore-1", "T01").read(
+    client.get_node(P, "Offshore-1", "T01").read(
         data_type="forecast", name="power", include_knowledge_time=True
     )
     return
 
 
 @app.cell
-def _(client, dd, forecast_written):
+def _(P, client, dd, forecast_written):
     import datetime as _dt
 
-    _t01 = client.get_node("demo-portfolio", "Offshore-1", "T01")
+    _t01 = client.get_node(P, "Offshore-1", "T01")
 
     def _known_at(hours):
         _df = _t01.read(
@@ -377,7 +454,7 @@ def _(client, dd, forecast_written):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## navigate and filter
+    ## Navigate and filter
 
     `.where(type=...)` filters a subtree by type before the read, addressed by name and type, never
     by UUID.
@@ -386,19 +463,17 @@ def _(mo):
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
     # Power for turbines only, across the whole portfolio.
     forecast_written
-    client.get_node("demo-portfolio").where(type="WindTurbine").read(
-        data_type="actual", name="power"
-    )
+    client.get_node(P).where(type="WindTurbine").read(data_type="actual", name="power")
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## edit safely: preview, then commit
+    ## Edit the hierarchy
 
     Identity is a stable UUID, so renames and moves are plain `UPDATE`s and series stay attached.
     `dry_run=True` returns a `TreeDiff` you can inspect before touching anything. A transaction
@@ -408,63 +483,28 @@ def _(mo):
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
     # dry_run previews the change and touches nothing. render() writes the diff
     # straight to stdout (it returns None), so there is nothing to print, just call it.
     forecast_written
-    client.get_node("demo-portfolio", "Offshore-2", "T03").delete(dry_run=True).render()
+    client.get_node(P, "Offshore-2", "T03").delete(dry_run=True).render()
     return
 
 
 @app.cell
-def _(client, forecast_written):
+def _(P, client, forecast_written):
     forecast_written
     # One atomic transaction: relocate the lone turbine to the bigger site and tag
     # both sites. Each node is touched exactly once (the move on T03, a note on
     # Offshore-1, a status on Offshore-2), so all three show in the preview.
-    # render() collapses the log by node and keeps only the last change per node,
-    # so a move + an edit on the *same* node would hide the move (see "what's next").
     with client.transaction() as _txn:
-        _txn.get_node("demo-portfolio", "Offshore-2", "T03").move_to(
-            "demo-portfolio/Offshore-1"
-        )
-        _txn.get_node("demo-portfolio", "Offshore-1").update({"note": "now hosts T03"})
-        _txn.get_node("demo-portfolio", "Offshore-2").update(
-            {"status": "decommissioned"}
-        )
+        _txn.get_node(P, "Offshore-2", "T03").move_to(f"{P}/Offshore-1")
+        _txn.get_node(P, "Offshore-1").update({"note": "now hosts T03"})
+        _txn.get_node(P, "Offshore-2").update({"status": "retired"})
         _txn.preview().render()  # prints the tree-diff to stdout
         _txn.commit()
     edited = True
     return (edited,)
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md("""
-    ## units convert on read
-
-    `power` is stored in its canonical unit (MW). Ask for another unit and pint rescales it for you.
-    Here MW to GW (a factor of 1000). `write(..., unit=...)` converts on the way in too.
-    """)
-    return
-
-
-@app.cell
-def _(client, forecast_written):
-    import polars as _pl
-
-    forecast_written
-    _t01 = client.get_node("demo-portfolio", "Offshore-1", "T01")
-    _mw = _t01.read(data_type="actual", name="power")
-    _gw = _t01.read(data_type="actual", name="power", unit="GW")
-    _pl.DataFrame(
-        {
-            "valid_time": _mw["valid_time"],
-            "power_MW": _mw["value"],
-            "power_GW": _gw["value"],
-        }
-    ).head(6)
-    return
 
 
 @app.cell(hide_code=True)
@@ -479,11 +519,11 @@ def _(mo):
 
 
 @app.cell
-def _(client, dd, edb, forecast_written):
+def _(P, client, dd, edb, forecast_written):
     forecast_written
     _cable = client.get_edge(
-        "demo-portfolio/Solar-Farm-1/PV01",
-        "demo-portfolio/Solar-Farm-1/B01",
+        f"{P}/Solar-Farm-1/PV01",
+        f"{P}/Solar-Farm-1/B01",
         type="Line",
     )
     _cable.register_series(
@@ -511,9 +551,9 @@ def _(mo):
 
 
 @app.cell
-def _(client, dd, edb, forecast_written):
+def _(P, client, dd, edb, forecast_written):
     forecast_written
-    _t01 = client.get_node("demo-portfolio", "Offshore-1", "T01")
+    _t01 = client.get_node(P, "Offshore-1", "T01")
     # workflow_id / model_name are dedicated columns; run_params is free-form JSON.
     _run_id = _t01.write(
         dd.wind_power(3.5),
@@ -547,9 +587,9 @@ def _(mo):
 
 
 @app.cell
-def _(client, edited):
+def _(P, client, edited):
     edited
-    client.get_tree("demo-portfolio", include_series=True)
+    client.get_tree(P, include_series=True)
     return
 
 
