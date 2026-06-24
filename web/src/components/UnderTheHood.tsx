@@ -66,13 +66,16 @@ export function UnderTheHood({ node, series, edge, version }: Props) {
         </button>
       </div>
       <div className="hood-body" style={{ height }}>
-        {!node && !series && !edge && (
+        {!node && !series && !edge ? (
           <div className="empty-hint">Select a node, edge, or series to see its raw rows.</div>
+        ) : (
+          <>
+            {data?.sql && <div className="sql">{data.sql}</div>}
+            <div className="hood-scroll">
+              <DataTable columns={data?.columns ?? []} rows={data?.rows ?? []} />
+            </div>
+          </>
         )}
-        {data?.sql && <div className="sql">{data.sql}</div>}
-        <div className="hood-scroll">
-          <DataTable columns={data?.columns ?? []} rows={data?.rows ?? []} />
-        </div>
       </div>
     </div>
   );

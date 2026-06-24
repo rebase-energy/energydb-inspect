@@ -4,7 +4,7 @@ A local visual inspector for [energydb](https://github.com/rebase-energy/energyd
 dashboard over your Postgres + ClickHouse showing the asset tree, timeseries plots, a map of the
 assets, and the raw rows plus the SQL "under the hood".
 
-![The energydb-inspect dashboard: the asset tree, the timeseries plot for a selected series, and the ClickHouse SQL under the hood](docs/dashboard-plot.png)
+![The energydb-inspect dashboard: the asset tree, the timeseries plot for a selected series, the map of asset footprints, and the SQL under the hood](docs/readme.gif)
 
 ## Inspect your energydb
 
@@ -16,8 +16,6 @@ uvx energydb-inspect --pg-dsn postgresql://… --ch-url http://…
 ```
 
 The dashboard opens at http://localhost:8000.
-
-![Selecting a node shows its Postgres metadata, the map of asset footprints, and the row behind it](docs/dashboard-map.png)
 
 You can also pass the connection via the environment or a `.env` in the working directory. Prefer
 this for real credentials, so they don't show up in `ps`/shell history:
