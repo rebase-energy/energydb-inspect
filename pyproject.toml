@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "energydb-inspect"
-version = "0.7.0"
+version = "0.8.0"
 description = "Visual inspector for energydb: a read-only dashboard over your Postgres structure + ClickHouse values."
 readme = "README.md"
 requires-python = ">=3.12"
