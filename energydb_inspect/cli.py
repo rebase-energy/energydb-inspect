@@ -18,7 +18,7 @@ import argparse
 import os
 import sys
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 
 def main() -> None:
@@ -36,7 +36,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    load_dotenv()  # TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the cwd
+    # find_dotenv(usecwd=True) is required: python-dotenv's default search starts
+    # at the *calling module's* directory, which for an installed package is
+    # inside site-packages, so a .env in the user's working directory is never
+    # found. (usecwd is a find_dotenv parameter, not a load_dotenv one.)
+    _env = find_dotenv(usecwd=True)
+    if _env:
+        load_dotenv(_env)  # TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the cwd
     # Explicit args win over .env/env. Note: a DSN on the command line is visible in
     # `ps`/shell history, so prefer .env for real credentials.
     if args.pg_dsn:

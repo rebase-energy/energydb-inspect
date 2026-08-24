@@ -14,7 +14,7 @@ import threading
 from urllib.parse import unquote, urlparse
 
 import clickhouse_connect
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from psycopg_pool import ConnectionPool
 
 # A down/unreachable database is handled gracefully (queries return empty), so quiet
@@ -24,8 +24,12 @@ logging.getLogger("psycopg.pool").setLevel(logging.ERROR)
 logging.getLogger("clickhouse_connect").setLevel(logging.ERROR)
 
 # Load TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the working directory (or the
-# already-exported environment); see .env.example.
-load_dotenv()
+# already-exported environment); see .env.example. The find_dotenv(usecwd=True)
+# dance is required, see the note in cli.py: without it an installed package
+# searches site-packages and never finds the user's .env.
+_ENV_FILE = find_dotenv(usecwd=True)
+if _ENV_FILE:
+    load_dotenv(_ENV_FILE)
 
 PG_DSN = os.environ.get("TIMEDB_PG_DSN", "")
 CH_URL = os.environ.get("TIMEDB_CH_URL", "")
