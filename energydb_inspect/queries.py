@@ -283,11 +283,21 @@ def reset_db() -> dict[str, Any]:
     import energydb as edb
 
     client = edb.Client()
+    dropped, note = True, ""
     try:
-        with contextlib.suppress(Exception):
-            client.delete()  # nothing to drop on a fresh DB
+        try:
+            client.delete()
+        except Exception as exc:  # noqa: BLE001
+            # A fresh database has nothing to drop, which is fine. Anything else
+            # means the wipe did not happen, and reporting ok would be a lie:
+            # create() below is idempotent, so the caller would see success while
+            # the old rows survive and the next register_tree fails on a unique
+            # violation.
+            dropped, note = False, f"{type(exc).__name__}: {exc}"
         client.create()
     finally:
         with contextlib.suppress(Exception):
             client.close()
-    return {"ok": True}
+    if not dropped:
+        print(f"energydb-inspect: reset could not drop the existing schema -- {note}", flush=True)
+    return {"ok": True, "dropped": dropped, "note": note}
