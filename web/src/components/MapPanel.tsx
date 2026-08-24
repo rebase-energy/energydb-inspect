@@ -47,8 +47,18 @@ interface Feat {
 const TILES = {
   light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
   dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  // Esri World Imagery: no API key, sub-metre over land, so onshore turbines are
+  // individually visible (blades and shadow at z17). Note it has no imagery over
+  // open sea: offshore farms render as flat ocean, which is a property of the
+  // basemap, not a bug here.
+  satellite:
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
 };
 const ATTR = '&copy; <a href="https://openstreetmap.org">OSM</a> &copy; <a href="https://carto.com">CARTO</a>';
+const SAT_ATTR = 'Imagery &copy; <a href="https://www.esri.com">Esri</a>, Maxar, Earthstar Geographics';
+
+type BaseKey = keyof typeof TILES;
+const BASE_LABELS: Record<BaseKey, string> = { light: "Light", dark: "Dark", satellite: "Satellite" };
 
 function asGeom(data: Record<string, unknown> | undefined): Geom | null {
   const g = data?.geometry as Geom | undefined;
@@ -157,7 +167,11 @@ export const MapPanel = forwardRef<MapHandle, Props>(function MapPanel(
 ) {
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const tileRef = useRef<L.TileLayer | null>(null);
+  const basesRef = useRef<Record<BaseKey, L.TileLayer> | null>(null);
+  // Which basemap is showing. Tracked so a theme change does not yank someone
+  // off Satellite: the light/dark pair follows the theme, an explicit Satellite
+  // choice sticks until they pick a map again.
+  const activeBaseRef = useRef<BaseKey>(theme);
   const featLayerRef = useRef<L.GeoJSON | null>(null);
   const restoreUntilRef = useRef(0); // while now() < this, a redraw leaves the camera alone
   const prevIdsRef = useRef<Set<string>>(new Set()); // feature ids drawn last time (for pop-in)
@@ -199,6 +213,27 @@ export const MapPanel = forwardRef<MapHandle, Props>(function MapPanel(
       renderer: L.canvas({ tolerance: 6 }),
     }).setView([55.781, 12.913], 12);
     mapRef.current = map;
+
+    // The three basemaps, built once, switchable from Leaflet's layers control.
+    const bases: Record<BaseKey, L.TileLayer> = {
+      light: L.tileLayer(TILES.light, { attribution: ATTR, subdomains: "abcd", maxZoom: 19 }),
+      dark: L.tileLayer(TILES.dark, { attribution: ATTR, subdomains: "abcd", maxZoom: 19 }),
+      satellite: L.tileLayer(TILES.satellite, { attribution: SAT_ATTR, maxZoom: 19 }),
+    };
+    basesRef.current = bases;
+    bases[activeBaseRef.current].addTo(map).bringToBack();
+    L.control
+      .layers(
+        { [BASE_LABELS.light]: bases.light, [BASE_LABELS.dark]: bases.dark, [BASE_LABELS.satellite]: bases.satellite },
+        undefined,
+        { position: "topright" },
+      )
+      .addTo(map);
+    map.on("baselayerchange", (e: L.LayersControlEvent) => {
+      const key = (Object.keys(BASE_LABELS) as BaseKey[]).find((k) => BASE_LABELS[k] === e.name);
+      if (key) activeBaseRef.current = key;
+    });
+
     const ro = new ResizeObserver(() => map.invalidateSize());
     ro.observe(elRef.current);
     requestAnimationFrame(() => map.invalidateSize());
@@ -206,18 +241,21 @@ export const MapPanel = forwardRef<MapHandle, Props>(function MapPanel(
       ro.disconnect();
       map.remove();
       mapRef.current = null;
-      tileRef.current = null;
+      basesRef.current = null;
       featLayerRef.current = null;
     };
   }, []);
 
-  // Swap the basemap when the theme changes.
+  // Follow the theme, unless Satellite was explicitly chosen.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    if (tileRef.current) tileRef.current.remove();
-    tileRef.current = L.tileLayer(TILES[theme], { attribution: ATTR, subdomains: "abcd", maxZoom: 19 }).addTo(map);
-    tileRef.current.bringToBack();
+    const bases = basesRef.current;
+    if (!map || !bases || activeBaseRef.current === "satellite") return;
+    const other = theme === "light" ? "dark" : "light";
+    if (map.hasLayer(bases[other])) map.removeLayer(bases[other]);
+    if (!map.hasLayer(bases[theme])) bases[theme].addTo(map);
+    bases[theme].bringToBack();
+    activeBaseRef.current = theme;
   }, [theme]);
 
   // All map features (memoized once). The layer is rebuilt only when the feature
