@@ -24,9 +24,9 @@ logging.getLogger("psycopg.pool").setLevel(logging.ERROR)
 logging.getLogger("clickhouse_connect").setLevel(logging.ERROR)
 
 # Load TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the working directory (or the
-# already-exported environment); see .env.example. The find_dotenv(usecwd=True)
-# dance is required, see the note in cli.py: without it an installed package
-# searches site-packages and never finds the user's .env.
+# already-exported environment); see .env.example. find_dotenv(usecwd=True) is
+# required (see the note in cli.py): without it an installed package searches
+# site-packages and never finds the user's .env.
 _ENV_FILE = find_dotenv(usecwd=True)
 if _ENV_FILE:
     load_dotenv(_ENV_FILE)
@@ -41,10 +41,10 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", None, ""}
 # with INSPECT_WRITABLE=1 (against throwaway databases).
 WRITABLE = os.environ.get("INSPECT_WRITABLE", "").lower() in ("1", "true", "yes", "on")
 
-# Reads are allowed against any host. The only thing that can mutate a database is
-# the Reset button (INSPECT_WRITABLE), so we refuse only to enable writes against a
-# non-local host: that prevents an accidental Reset of a remote/prod DB. Set
-# INSPECT_TRUSTED_DB=1 if you really do want to write to a remote host.
+# Reads are allowed against any host. The only thing that can mutate a database
+# is the Reset button (INSPECT_WRITABLE), so enabling writes is refused against a
+# non-local host, which prevents an accidental Reset of a remote/prod DB. Set
+# INSPECT_TRUSTED_DB=1 to write to a remote host deliberately.
 _TRUST_DB = os.environ.get("INSPECT_TRUSTED_DB", "").lower() in (
     "1",
     "true",

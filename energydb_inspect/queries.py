@@ -26,9 +26,9 @@ def _safe_ch(sql: str, parameters: dict | None = None):
         return None
 
 
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 # state version, cheap fingerprint the dashboard polls to know when to refetch
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 def get_state_version() -> dict[str, Any]:
     pg = _safe_pg(
         """
@@ -53,9 +53,9 @@ def get_state_version() -> dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 # asset tree (Postgres) + which series already hold values (ClickHouse)
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 def _series_value_stats() -> dict[int, tuple[int, int]]:
     """Per-series ``{series_id: (count, max_change_micros)}`` from ClickHouse.
 
@@ -131,9 +131,9 @@ def get_tree() -> dict[str, Any]:
     return {"portfolios": roots}
 
 
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 # grid edges (Postgres)
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 def get_edges() -> list[dict]:
     res = _safe_pg(
         "SELECT e.uuid, e.edge_type, e.name, e.from_node_uuid, e.to_node_uuid, e.data, "
@@ -175,9 +175,9 @@ def get_edges() -> list[dict]:
     return out
 
 
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 # series values (ClickHouse)
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 def _value_stats(cols: list[str], rows: list[list]) -> dict[str, Any]:
     if not rows:
         return {"count": 0}
@@ -229,9 +229,9 @@ def get_series_values(series_id: int, mode: str) -> dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 # raw rows, the literal backing tables, with the SQL used (for "show SQL")
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 def get_raw_ch(series_id: int) -> dict[str, Any]:
     sql = (
         "SELECT series_id, valid_time, knowledge_time, change_time, value, "
@@ -276,9 +276,9 @@ def get_edge_row(from_path: str, to_path: str) -> dict[str, Any]:
     return {"columns": res[0], "rows": [list(r) for r in res[1]], "sql": sql}
 
 
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 # reset, the only write path; full schema wipe + recreate (PG + CH)
-# --------------------------------------------------------------------------- #
+# ---------------------------------------------------------------------------
 def reset_db() -> dict[str, Any]:
     import energydb as edb
 
@@ -299,5 +299,8 @@ def reset_db() -> dict[str, Any]:
         with contextlib.suppress(Exception):
             client.close()
     if not dropped:
-        print(f"energydb-inspect: reset could not drop the existing schema -- {note}", flush=True)
+        print(
+            f"energydb-inspect: reset could not drop the existing schema: {note}",
+            flush=True,
+        )
     return {"ok": True, "dropped": dropped, "note": note}

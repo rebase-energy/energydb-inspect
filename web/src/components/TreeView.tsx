@@ -42,7 +42,7 @@ export function TreeView({
 
   // Apply the zoom/pan transform straight to the DOM <g> (not React state) so a
   // pan, wheel-zoom, or auto-fit animates at 60fps without re-rendering the whole
-  // tree every frame — the foreignObject node cards are expensive to reconcile.
+  // tree every frame; the foreignObject node cards are expensive to reconcile.
   useEffect(() => {
     if (!svgRef.current) return;
     const sel = select(svgRef.current);
@@ -61,7 +61,7 @@ export function TreeView({
   // Auto-fit the viewport so the whole tree stays in focus. Keyed on a structural
   // signature (set of node uuids + series counts), sorted so it is order-independent:
   // adding/removing a node re-fits, but a pure move (same nodes, new parent) does
-  // not re-pan the camera — so the relocating node visibly travels instead.
+  // not re-pan the camera, so the relocating node visibly travels instead.
   const fitSig = useMemo(
     () =>
       layout.nodes
@@ -119,8 +119,8 @@ export function TreeView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitSig]);
 
-  // Refit when the pane resizes — e.g. switching to the Tree tab on mobile or
-  // resizing the window — so the whole tree is always framed.
+  // Refit when the pane resizes (switching to the Tree tab on mobile, resizing
+  // the window) so the whole tree is always framed.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -148,7 +148,7 @@ export function TreeView({
 
   // Spotlight a relocating node: when a node keeps its uuid but its path changes
   // (a move_to), flag it for ~1s so its card lifts and the rest of the tree dims
-  // while it slides to the new parent — reads clearly as a move, not a rebuild.
+  // while it slides to the new parent: reads clearly as a move, not a rebuild.
   const prevPaths = useRef<Map<string, string>>(new Map());
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [moving, setMoving] = useState<Set<string>>(new Set());

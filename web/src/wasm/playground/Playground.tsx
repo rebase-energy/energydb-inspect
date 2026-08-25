@@ -1,7 +1,7 @@
 // The left pane as an agent-style story: the current step is shown with its ask
 // and code; Run (or Space) works it, the tree/map update, then it collapses to a
 // one-line ask as the next becomes active. Three layouts to compare via the
-// toggle (floating cards / aligned column / chat transcript) — same markup,
+// toggle (floating cards / aligned column / chat transcript): same markup,
 // CSS keyed on data-layout.
 import { useEffect, useRef, useState } from "react";
 import type { PlaygroundCtrl } from "../app/usePlayground";
@@ -31,7 +31,7 @@ export function Playground({ ctrl, mobile }: { ctrl: PlaygroundCtrl; mobile?: bo
     if (!busy && cursor >= 0) void run(cursor).catch(() => {});
   };
 
-  // Keep the active card in view as the story advances — align its TOP so the
+  // Keep the active card in view as the story advances, aligning its TOP so the
   // prompt + start of the code are visible and you scroll down for the rest.
   const activeRef = useRef<HTMLLIElement>(null);
   useEffect(() => {

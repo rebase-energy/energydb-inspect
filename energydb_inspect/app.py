@@ -89,10 +89,10 @@ def reset():
     return queries.reset_db()
 
 
-# Serve the built dashboard (single-page app). Defaults to the bundled `_static`
+# Serve the built dashboard (single-page app). Defaults to the bundled _static
 # (populated at build/publish), so the installed tool serves the UI with no config;
 # override with INSPECT_STATIC_DIR. Mounted LAST at "/", so /api/* always wins.
-# In local dev `_static` is empty, so this is skipped and the Vite dev server (:5173)
+# In local dev _static is empty, so this is skipped and the Vite dev server (:5173)
 # serves the UI instead.
 _STATIC_DIR = os.environ.get("INSPECT_STATIC_DIR") or str(
     Path(__file__).parent / "_static"

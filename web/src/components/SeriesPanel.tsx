@@ -91,7 +91,7 @@ export function SeriesPanel({ node, edge, series, version, theme }: Props) {
     };
   }, [series.series_id, series.timeseries_type, version]);
 
-  // Pull the actual series' values to overlay as a reference in "All revisions".
+  // Pull the actual series' values to overlay as the reference line.
   useEffect(() => {
     let alive = true;
     if (!actualSeries) {
@@ -111,8 +111,9 @@ export function SeriesPanel({ node, edge, series, version, theme }: Props) {
     };
   }, [actualSeries, version]);
 
-  // Always the "latest" view (revisions ghosted behind the stitched latest +
-  // actual). The Latest / All-revisions toggle was removed.
+  // Always the "latest" view: revisions ghosted behind the stitched latest +
+  // actual. `showAll` stays pinned false since the Latest / All-revisions
+  // toggle was removed; the branches it guards are kept for if it returns.
   const showAll = false;
   const active = latest;
 
@@ -125,8 +126,8 @@ export function SeriesPanel({ node, edge, series, version, theme }: Props) {
     };
 
     if (isForecast) {
-      // Each forecast revision (one line per knowledge_time). Full opacity in
-      // "All revisions"; ghosted in "Latest" so the actual + latest stand out.
+      // Each forecast revision (one line per knowledge_time), ghosted so the
+      // actual + latest stand out (full opacity only under showAll).
       if (overlap) {
         const ci = (c: string) => overlap.columns.indexOf(c);
         const groups = new Map<string, [number, number][]>();
@@ -199,9 +200,9 @@ export function SeriesPanel({ node, edge, series, version, theme }: Props) {
       color: pal.multi,
       grid: { left: 54, right: 18, top: isForecast ? 42 : 14, bottom: 54 },
       tooltip: { trigger: "axis", confine: true },
-      // Only "actual" (+ "latest" in Latest view) in the legend — the per-revision
-      // knowledge_time lines would crowd it (6+ entries); they still draw + show
-      // their knowledge_time on hover.
+      // Only "actual" and "latest" in the legend; the per-revision
+      // knowledge_time lines would crowd it (6+ entries), and they still draw
+      // and show their knowledge_time on hover.
       legend: isForecast
         ? {
             top: 4,

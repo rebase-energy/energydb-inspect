@@ -44,7 +44,7 @@ def main() -> None:
     if _env:
         load_dotenv(_env)  # TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the cwd
     # Explicit args win over .env/env. Note: a DSN on the command line is visible in
-    # `ps`/shell history, so prefer .env for real credentials.
+    # ps/shell history, so prefer .env for real credentials.
     if args.pg_dsn:
         os.environ["TIMEDB_PG_DSN"] = args.pg_dsn
     if args.ch_url:

@@ -356,7 +356,7 @@ def _(mo):
 
 @app.cell
 def _(P, client, forecast_written):
-    # Whole-portfolio fan-out: every `power` actual under the portfolio, in one frame.
+    # Whole-portfolio fan-out: every power actual under the portfolio, in one frame.
     forecast_written
     client.get_node(P).read(data_type="actual", name="power")
     return
@@ -485,7 +485,8 @@ def _(mo):
 @app.cell
 def _(P, client, forecast_written):
     # dry_run previews the change and touches nothing. render() writes the diff
-    # straight to stdout (it returns None), so there is nothing to print, just call it.
+    # straight to stdout (it returns None), so there is nothing to print; just
+    # call it.
     forecast_written
     client.get_node(P, "Offshore-2", "T03").delete(dry_run=True).render()
     return

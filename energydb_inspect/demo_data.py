@@ -21,7 +21,9 @@ from shapely.geometry import LineString, Polygon
 START = datetime(2026, 1, 1, tzinfo=UTC)
 PERIODS = 72
 
-# ── Geometry (lon, lat), real shapes the assets carry, shown on the map ──────
+# ---------------------------------------------------------------------------
+# Geometry (lon, lat): real shapes the assets carry, shown on the map
+# ---------------------------------------------------------------------------
 # Areas are polygons; turbines / PV system / battery stay points (passed as
 # lat/lon). Children sit inside their parent's area. Both sites are in the Kalmar
 # Sound region of southeast Sweden, ~16 km apart.
@@ -112,7 +114,7 @@ def cable_flow() -> pd.DataFrame:
 # Forecast revisions: (hours after START the forecast is issued, error scale).
 # Six revisions issued every 8 h, each sharper than the last. Each covers a
 # bounded FORECAST_HORIZON_H window from its issue time, so it starts and ends
-# *inside* the 72 h timeline, making each revision's span easy to read.
+# inside the 72 h timeline, making each revision's span easy to read.
 FORECAST_HORIZON_H = 36
 FORECAST_REVISIONS = [
     (0, 0.34),

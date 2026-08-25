@@ -115,7 +115,7 @@ function palette(theme: Theme) {
 }
 
 /** Minimal entrance for a freshly-added point marker: it grows + fades in.
- * Only markers animate — polygon/line fills are left at their resting style so
+ * Only markers animate; polygon/line fills are left at their resting style so
  * they can't flash fully-filled for a frame before settling. */
 function animateIn(lyr: L.CircleMarker, target: L.CircleMarkerOptions) {
   const r = target.radius ?? 5;
@@ -259,7 +259,7 @@ export const MapPanel = forwardRef<MapHandle, Props>(function MapPanel(
   }, [theme]);
 
   // All map features (memoized once). The layer is rebuilt only when the feature
-  // SET (ids + geometry kind) or the theme changes — NOT on selection, so clicking
+  // SET (ids + geometry kind) or the theme changes, NOT on selection, so clicking
   // / auto-selecting restyles in place instead of tearing down + re-flying.
   const feats = useMemo(() => buildFeatures(tree, edges), [tree, edges]);
   const featSetSig = useMemo(() => feats.map((f) => `${f.id}:${f.geom.type}`).join("|"), [feats]);
@@ -358,7 +358,7 @@ export const MapPanel = forwardRef<MapHandle, Props>(function MapPanel(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featSetSig, theme]);
 
-  // Restyle + recentre on selection change — no rebuild, so no flash / jump.
+  // Restyle + recentre on selection change: no rebuild, so no flash / jump.
   useEffect(() => {
     if (!featLayerRef.current) return;
     const selId = selected?.id ?? null;
