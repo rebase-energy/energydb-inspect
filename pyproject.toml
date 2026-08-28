@@ -17,6 +17,7 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "psycopg-pool>=3.2",
     "python-dotenv>=1.0",
+    "httpx>=0.27",
 ]
 
 # Extras only for running the example notebook (energydb_inspect/notebooks/demo.py);
