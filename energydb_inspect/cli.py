@@ -15,10 +15,14 @@ run with marimo; see the README.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
+from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -36,13 +40,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # find_dotenv(usecwd=True) is required: python-dotenv's default search starts
-    # at the *calling module's* directory, which for an installed package is
-    # inside site-packages, so a .env in the user's working directory is never
-    # found. (usecwd is a find_dotenv parameter, not a load_dotenv one.)
-    _env = find_dotenv(usecwd=True)
-    if _env:
+    # Only a .env in the cwd, no upward walk to a parent directory (db.py does
+    # the same check again on import, once TIMEDB_PG_DSN/CH_URL are read there).
+    _env = Path.cwd() / ".env"
+    if _env.is_file():
         load_dotenv(_env)  # TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the cwd
+        logger.info("loading environment from %s", _env)
+    else:
+        logger.info("no .env in %s", Path.cwd())
     # Explicit args win over .env/env. Note: a DSN on the command line is visible in
     # ps/shell history, so prefer .env for real credentials.
     if args.pg_dsn:

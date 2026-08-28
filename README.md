@@ -26,8 +26,17 @@ TIMEDB_PG_DSN=postgresql://…
 TIMEDB_CH_URL=http://…
 ```
 
+Only a `.env` in the current directory is read (no parent-directory search).
+
 ```sh
 uvx energydb-inspect
+```
+
+The tables are read from the `ENERGYDB_SCHEMA` schema, default `public` (matching
+energydb's own default). Set it if your energydb was created with a different schema:
+
+```sh
+ENERGYDB_SCHEMA=energydb uvx energydb-inspect --pg-dsn postgresql://… --ch-url http://…
 ```
 
 ## Try it on a throwaway database

@@ -28,15 +28,20 @@ import contextlib
 import contextvars
 import logging
 import os
+import re
 import threading
 import time
 from collections import OrderedDict
+from pathlib import Path
+from typing import Any, LiteralString, cast
 from urllib.parse import unquote, urlparse
 
 import clickhouse_connect
 import httpx
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 from psycopg_pool import ConnectionPool
+
+logger = logging.getLogger(__name__)
 
 # A down/unreachable database is handled gracefully (queries return empty), so quiet
 # the per-attempt connection-failure warnings from the pool / ClickHouse client; the
@@ -44,16 +49,32 @@ from psycopg_pool import ConnectionPool
 logging.getLogger("psycopg.pool").setLevel(logging.ERROR)
 logging.getLogger("clickhouse_connect").setLevel(logging.ERROR)
 
-# Load TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the working directory (or the
-# already-exported environment); see .env.example. find_dotenv(usecwd=True) is
-# required (see the note in cli.py): without it an installed package searches
-# site-packages and never finds the user's .env.
-_ENV_FILE = find_dotenv(usecwd=True)
-if _ENV_FILE:
-    load_dotenv(_ENV_FILE)
+# Load TIMEDB_PG_DSN / TIMEDB_CH_URL from a .env in the CURRENT working directory
+# only (no upward walk to a parent directory's .env) -- see .env.example. An
+# installed package resolving a stray .env from some ancestor of the cwd is a
+# worse failure mode than requiring the file to sit right where you run the
+# command from.
+_ENV_PATH = Path.cwd() / ".env"
+if _ENV_PATH.is_file():
+    load_dotenv(_ENV_PATH)
+    logger.info("loading environment from %s", _ENV_PATH)
+    ENV_FILE: str | None = str(_ENV_PATH)
+else:
+    logger.info("no .env in %s", Path.cwd())
+    ENV_FILE = None
 
 PG_DSN = os.environ.get("TIMEDB_PG_DSN", "")
 CH_URL = os.environ.get("TIMEDB_CH_URL", "")
+
+_SCHEMA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+#: Schema holding the energydb tables, matching the energydb library's own
+#: ENERGYDB_SCHEMA (default "public"). Interpolated directly into SQL in
+#: queries.py, so it is validated as a plain identifier here.
+SCHEMA = os.environ.get("ENERGYDB_SCHEMA", "public") or "public"
+if not _SCHEMA_RE.match(SCHEMA):
+    raise RuntimeError(
+        f"invalid ENERGYDB_SCHEMA {SCHEMA!r}: must match {_SCHEMA_RE.pattern}"
+    )
 
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", None, ""}
 
@@ -89,6 +110,25 @@ def _assert_write_target_local(url: str, label: str) -> None:
 if WRITABLE:
     _assert_write_target_local(PG_DSN, "TIMEDB_PG_DSN")
     _assert_write_target_local(CH_URL, "TIMEDB_CH_URL")
+
+
+def _target(url: str) -> str | None:
+    """``host/dbname`` for a DSN/URL, for display -- never user or password."""
+    if not url:
+        return None
+    u = urlparse(url)
+    return f"{u.hostname or '?'}/{(u.path or '').lstrip('/') or '?'}"
+
+
+_PG_TARGET = _target(PG_DSN)
+_CH_TARGET = _target(CH_URL)
+
+# Last error from a pg_query()/ch_query() call, single-tenant mode only (session
+# mode keeps the equivalent on SessionCreds). Recorded by queries.py's
+# _safe_pg/_safe_ch, cleared on the next successful call; never the raw
+# DSN/password, just ``type(exc).__name__: exc``.
+_pg_error: str | None = None
+_ch_error: str | None = None
 
 pg_pool: ConnectionPool | None = None
 _ch_client = None
@@ -183,15 +223,35 @@ class SessionCreds:
     per-session lock the moment there's more than one tenant -- this is that.
     """
 
-    __slots__ = ("pg_pool", "ch_client", "ch_lock", "resolved_at", "last_used")
+    __slots__ = (
+        "pg_pool",
+        "ch_client",
+        "ch_lock",
+        "resolved_at",
+        "last_used",
+        "pg_target",
+        "ch_target",
+        "pg_error",
+        "ch_error",
+    )
 
-    def __init__(self, pg_pool: ConnectionPool, ch_client) -> None:
+    def __init__(
+        self,
+        pg_pool: ConnectionPool,
+        ch_client,
+        pg_target: str | None = None,
+        ch_target: str | None = None,
+    ) -> None:
         self.pg_pool = pg_pool
         self.ch_client = ch_client
         self.ch_lock = threading.Lock()
         now = time.monotonic()
         self.resolved_at = now
         self.last_used = now
+        self.pg_target = pg_target
+        self.ch_target = ch_target
+        self.pg_error: str | None = None
+        self.ch_error: str | None = None
 
 
 # The active session's creds for the duration of one request (set by the ASGI
@@ -218,7 +278,9 @@ def _evict_locked() -> None:
         _, victim = _session_cache.popitem(last=False)
         _close_creds(victim)
     now = time.monotonic()
-    stale_keys = [k for k, v in _session_cache.items() if now - v.last_used > SESSION_IDLE_SECONDS]
+    stale_keys = [
+        k for k, v in _session_cache.items() if now - v.last_used > SESSION_IDLE_SECONDS
+    ]
     for k in stale_keys:
         victim = _session_cache.pop(k)
         _close_creds(victim)
@@ -244,7 +306,7 @@ def _build_creds(pg_dsn: str, ch_url: str) -> SessionCreds:
         password=unquote(u.password or ""),
         database=(u.path or "/default").lstrip("/") or "default",
     )
-    return SessionCreds(pg_pool_, ch_client_)
+    return SessionCreds(pg_pool_, ch_client_, _target(pg_dsn), _target(ch_url))
 
 
 async def resolve_session(session_id: str, token: str) -> SessionCreds:
@@ -306,7 +368,11 @@ def pg_query(sql: str, params: tuple | None = None) -> tuple[list[str], list[tup
     if pool is None:
         raise RuntimeError("Postgres pool is not open")
     with pool.connection() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
+        # sql is assembled from static query text plus db.SCHEMA, which is
+        # regex-validated as a plain identifier at import time (never raw user
+        # input), so the cast is sound: it's a str, not a LiteralString, only
+        # because f-strings can't express "this variable is a fixed identifier".
+        cur.execute(cast(LiteralString, sql), params)
         cols = [d.name for d in cur.description] if cur.description else []
         rows = cur.fetchall()
     return cols, rows
@@ -321,3 +387,69 @@ def ch_query(sql: str, parameters: dict | None = None) -> tuple[list[str], list[
     with lock:
         res = client.query(sql, parameters=parameters or {})
     return list(res.column_names), [list(r) for r in res.result_rows]
+
+
+_MAX_ERROR_LEN = 300
+
+
+def _format_error(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"[:_MAX_ERROR_LEN]
+
+
+def record_pg_error(exc: Exception) -> None:
+    """Record the last pg_query() failure, session-aware. Never the DSN/password:
+    just the exception type + message, and only from a genuine query failure."""
+    global _pg_error
+    creds = _current.get()
+    if creds is not None:
+        creds.pg_error = _format_error(exc)
+    else:
+        _pg_error = _format_error(exc)
+
+
+def clear_pg_error() -> None:
+    global _pg_error
+    creds = _current.get()
+    if creds is not None:
+        creds.pg_error = None
+    else:
+        _pg_error = None
+
+
+def record_ch_error(exc: Exception) -> None:
+    global _ch_error
+    creds = _current.get()
+    if creds is not None:
+        creds.ch_error = _format_error(exc)
+    else:
+        _ch_error = _format_error(exc)
+
+
+def clear_ch_error() -> None:
+    global _ch_error
+    creds = _current.get()
+    if creds is not None:
+        creds.ch_error = None
+    else:
+        _ch_error = None
+
+
+def get_connection_status() -> dict[str, Any]:
+    """Snapshot of the active (session, or single-tenant) connection: targets,
+    last errors, and (single-tenant only) the resolved .env path."""
+    creds = _current.get()
+    if creds is not None:
+        return {
+            "pg_target": creds.pg_target,
+            "ch_target": creds.ch_target,
+            "pg_error": creds.pg_error,
+            "ch_error": creds.ch_error,
+            "env_file": None,
+        }
+    return {
+        "pg_target": _PG_TARGET,
+        "ch_target": _CH_TARGET,
+        "pg_error": _pg_error,
+        "ch_error": _ch_error,
+        "env_file": ENV_FILE,
+    }

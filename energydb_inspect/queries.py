@@ -14,42 +14,89 @@ from . import db
 
 def _safe_pg(sql: str, params: tuple | None = None):
     try:
-        return db.pg_query(sql, params)
-    except Exception:
+        result = db.pg_query(sql, params)
+    except Exception as exc:  # noqa: BLE001
+        db.record_pg_error(exc)
         return None
+    db.clear_pg_error()
+    return result
 
 
 def _safe_ch(sql: str, parameters: dict | None = None):
     try:
-        return db.ch_query(sql, parameters)
-    except Exception:
+        result = db.ch_query(sql, parameters)
+    except Exception as exc:  # noqa: BLE001
+        db.record_ch_error(exc)
         return None
+    db.clear_ch_error()
+    return result
+
+
+def _schema_has_tables(schema: str) -> bool | None:
+    """Cheap, schema-agnostic probe: does ``schema`` hold the energydb tables?
+
+    Runs against ``information_schema`` directly (bypassing ``_safe_pg``) so it
+    never clobbers the pg_error just recorded by the main state-version query --
+    a wrong ``ENERGYDB_SCHEMA`` and a genuinely unreachable Postgres both fail
+    that query the same way, and this is what tells them apart. Returns None
+    when Postgres itself can't be reached (query failed too).
+    """
+    try:
+        _, rows = db.pg_query(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = %s AND table_name = 'node')",
+            (schema,),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return bool(rows[0][0])
 
 
 # ---------------------------------------------------------------------------
 # state version, cheap fingerprint the dashboard polls to know when to refetch
 # ---------------------------------------------------------------------------
 def get_state_version() -> dict[str, Any]:
+    schema = db.SCHEMA
     pg = _safe_pg(
-        """
+        f"""
         SELECT
-          (SELECT count(*) FROM energydb.node),
-          (SELECT count(*) FROM energydb.edge),
-          (SELECT count(*) FROM energydb.series),
-          (SELECT coalesce(extract(epoch FROM max(updated_at)), 0)::bigint FROM energydb.node),
-          (SELECT coalesce(extract(epoch FROM max(inserted_at)), 0)::bigint FROM energydb.series)
+          (SELECT count(*) FROM {schema}.node),
+          (SELECT count(*) FROM {schema}.edge),
+          (SELECT count(*) FROM {schema}.series),
+          (SELECT coalesce(extract(epoch FROM max(updated_at)), 0)::bigint FROM {schema}.node),
+          (SELECT coalesce(extract(epoch FROM max(inserted_at)), 0)::bigint FROM {schema}.series)
         """
     )
+    pg_ok = pg is not None
     n, e, s, nt, st = pg[1][0] if pg else (0, 0, 0, 0, 0)
 
     ch = _safe_ch(
         "SELECT count(), coalesce(toUnixTimestamp64Micro(max(change_time)), 0) FROM series_values"
     )
+    ch_ok = ch is not None
     cc, cm = ch[1][0] if ch else (0, 0)
+
+    # A snapshot taken now reflects the two probes above; schema_has_tables runs
+    # its own pg_query below and must not be allowed to overwrite it.
+    status = db.get_connection_status()
+
+    # n > 0 already proves the schema + its tables exist; skip the extra query.
+    schema_has_tables = True if (pg_ok and n > 0) else _schema_has_tables(schema)
 
     return {
         "version": f"{n}.{e}.{s}.{nt}.{st}.{cc}.{cm}",
         "counts": {"nodes": n, "edges": e, "series": s, "values": cc},
+        "connection": {
+            "pg_ok": pg_ok,
+            "ch_ok": ch_ok,
+            "pg_target": status["pg_target"],
+            "ch_target": status["ch_target"],
+            "schema": schema,
+            "schema_has_tables": schema_has_tables,
+            "pg_error": status["pg_error"],
+            "ch_error": status["ch_error"],
+            "env_file": status["env_file"],
+        },
     }
 
 
@@ -88,15 +135,16 @@ def _series_dict(
 
 
 def get_tree() -> dict[str, Any]:
+    schema = db.SCHEMA
     nres = _safe_pg(
-        "SELECT uuid, node_type, name, parent_uuid, path, data FROM energydb.node ORDER BY path"
+        f"SELECT uuid, node_type, name, parent_uuid, path, data FROM {schema}.node ORDER BY path"
     )
     if nres is None:
         return {"portfolios": []}
 
     sres = _safe_pg(
         "SELECT series_id, node_uuid, data_type, name, canonical_unit, timeseries_type, retention "
-        "FROM energydb.series WHERE node_uuid IS NOT NULL ORDER BY series_id"
+        f"FROM {schema}.series WHERE node_uuid IS NOT NULL ORDER BY series_id"
     )
     stats = _series_value_stats()
 
@@ -135,19 +183,21 @@ def get_tree() -> dict[str, Any]:
 # grid edges (Postgres)
 # ---------------------------------------------------------------------------
 def get_edges() -> list[dict]:
+    schema = db.SCHEMA
     res = _safe_pg(
         "SELECT e.uuid, e.edge_type, e.name, e.from_node_uuid, e.to_node_uuid, e.data, "
-        "nf.path AS from_path, nt.path AS to_path FROM energydb.edge e "
-        "JOIN energydb.node nf ON nf.uuid = e.from_node_uuid "
-        "JOIN energydb.node nt ON nt.uuid = e.to_node_uuid ORDER BY e.uuid"
+        "nf.path AS from_path, nt.path AS to_path "
+        f"FROM {schema}.edge e "
+        f"JOIN {schema}.node nf ON nf.uuid = e.from_node_uuid "
+        f"JOIN {schema}.node nt ON nt.uuid = e.to_node_uuid ORDER BY e.uuid"
     )
     if res is None:
         return []
 
-    # Edge-owned series (energydb.series.edge_uuid), keyed by edge uuid.
+    # Edge-owned series (<schema>.series.edge_uuid), keyed by edge uuid.
     sres = _safe_pg(
         "SELECT series_id, edge_uuid, data_type, name, canonical_unit, timeseries_type, retention "
-        "FROM energydb.series WHERE edge_uuid IS NOT NULL ORDER BY series_id"
+        f"FROM {schema}.series WHERE edge_uuid IS NOT NULL ORDER BY series_id"
     )
     stats = _series_value_stats()
     series_by_edge: dict[str, list[dict]] = {}
@@ -248,8 +298,9 @@ def get_raw_ch(series_id: int) -> dict[str, Any]:
 def get_node_row(path: str) -> dict[str, Any]:
     """The full Postgres row for one node, looked up by its tree path (the way
     you'd normally address a node), plus the SQL used."""
-    sql = f"SELECT * FROM energydb.node WHERE path = '{path}'"
-    res = _safe_pg("SELECT * FROM energydb.node WHERE path = %s", (path,))
+    schema = db.SCHEMA
+    sql = f"SELECT * FROM {schema}.node WHERE path = '{path}'"
+    res = _safe_pg(f"SELECT * FROM {schema}.node WHERE path = %s", (path,))
     if res is None or not res[1]:
         return {"columns": [], "rows": [], "sql": sql}
     return {"columns": res[0], "rows": [list(res[1][0])], "sql": sql}
@@ -258,16 +309,17 @@ def get_node_row(path: str) -> dict[str, Any]:
 def get_edge_row(from_path: str, to_path: str) -> dict[str, Any]:
     """The full Postgres row for one edge, looked up by its endpoint tree paths
     (joining the node table), plus the SQL used."""
+    schema = db.SCHEMA
     sql = (
-        "SELECT e.* FROM energydb.edge e\n"
-        "  JOIN energydb.node nf ON nf.uuid = e.from_node_uuid\n"
-        "  JOIN energydb.node nt ON nt.uuid = e.to_node_uuid\n"
+        f"SELECT e.* FROM {schema}.edge e\n"
+        f"  JOIN {schema}.node nf ON nf.uuid = e.from_node_uuid\n"
+        f"  JOIN {schema}.node nt ON nt.uuid = e.to_node_uuid\n"
         f"WHERE nf.path = '{from_path}' AND nt.path = '{to_path}'"
     )
     res = _safe_pg(
-        "SELECT e.* FROM energydb.edge e "
-        "JOIN energydb.node nf ON nf.uuid = e.from_node_uuid "
-        "JOIN energydb.node nt ON nt.uuid = e.to_node_uuid "
+        f"SELECT e.* FROM {schema}.edge e "
+        f"JOIN {schema}.node nf ON nf.uuid = e.from_node_uuid "
+        f"JOIN {schema}.node nt ON nt.uuid = e.to_node_uuid "
         "WHERE nf.path = %s AND nt.path = %s",
         (from_path, to_path),
     )
