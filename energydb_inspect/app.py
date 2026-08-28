@@ -14,12 +14,64 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, queries
 
 # Writability (and the remote-write guard) live in db, the single source of truth.
 WRITABLE = db.WRITABLE
+
+
+class SessionAuthMiddleware:
+    """Pure ASGI middleware (deliberately NOT Starlette's ``BaseHTTPMiddleware``,
+    which runs the downstream app in a separate task -- context propagation
+    across that boundary is a well-known footgun). Running in-line in the
+    current task means setting ``db._current`` here is guaranteed visible to
+    the route handler that runs inside ``self.app(...)``.
+
+    A no-op pass-through when ``db.SESSION_AWARE`` is false (the default --
+    unmodified single-tenant behavior, e.g. the plain ``energydb-inspect`` CLI).
+    When true (the playground deployment), every ``/api/*`` request MUST carry
+    valid ``X-EDB-Session`` / ``X-EDB-Token`` headers -- missing or invalid is a
+    401, never a silent fallback to some other session's or the global pool.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not db.SESSION_AWARE:
+            return await self.app(scope, receive, send)
+        path = scope.get("path", "")
+        if not path.startswith("/api/"):
+            return await self.app(scope, receive, send)
+
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        session_id = headers.get("x-edb-session", "")
+        token = headers.get("x-edb-token", "")
+        if not session_id or not token:
+            resp = JSONResponse(
+                {"detail": "missing X-EDB-Session/X-EDB-Token headers"}, status_code=401
+            )
+            return await resp(scope, receive, send)
+
+        try:
+            creds = await db.resolve_session(session_id, token)
+        except db.SessionAuthError:
+            resp = JSONResponse({"detail": "invalid or expired session"}, status_code=401)
+            return await resp(scope, receive, send)
+        except Exception:
+            resp = JSONResponse(
+                {"detail": "credential resolution unavailable"}, status_code=502
+            )
+            return await resp(scope, receive, send)
+
+        cv_token = db._current.set(creds)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            db._current.reset(cv_token)
 
 
 @asynccontextmanager
@@ -32,9 +84,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="EnergyDB Inspector", version="0.0.0", lifespan=lifespan)
+
+# INSPECT_CORS_ORIGINS: comma-separated allow-list, e.g. the deploy origin(s)
+# plus localhost dev ports. Falls back to the original dev-only default (Vite's
+# :5173) when unset, unchanged from before session-awareness existed.
+_cors_origins_env = os.environ.get("INSPECT_CORS_ORIGINS", "").strip()
+_CORS_ORIGINS = (
+    [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    if _cors_origins_env
+    else ["http://localhost:5173", "http://127.0.0.1:5173"]
+)
+# Order matters: Starlette makes the LAST-added middleware the OUTERMOST one.
+# SessionAuthMiddleware is added first (inner) so CORSMiddleware (outer) always
+# gets first look at a request -- an OPTIONS preflight (which never carries the
+# X-EDB-Session/X-EDB-Token headers being asked permission for) is answered by
+# CORS before it would otherwise 401 against SessionAuthMiddleware.
+app.add_middleware(SessionAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
