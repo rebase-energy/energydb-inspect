@@ -1,5 +1,6 @@
 // Types live in ./types so the in-browser WASM api can share them verbatim.
 export type {
+  ConnectionStatus,
   Counts,
   Edge,
   InspectorApi,
@@ -22,6 +23,16 @@ function sessionHeaders(): HeadersInit | undefined {
   return { "X-EDB-Session": creds.sessionId, "X-EDB-Token": creds.token };
 }
 
+// Thrown by getJSON()/reset() on a non-ok HTTP response, carrying the status so
+// callers (useInspector) can tell "session invalid" (401) apart from any other
+// failure without parsing the message text.
+export class HttpError extends Error {
+  constructor(readonly status: number, statusText: string) {
+    super(`${status} ${statusText}`);
+    this.name = "HttpError";
+  }
+}
+
 // Deliberately RELATIVE (no leading slash): resolves against the current
 // document's own URL, so this dashboard works whether served at the origin
 // root (CLI / local dev) or under a sub-path like /inspect/ (the playground's
@@ -30,7 +41,7 @@ function sessionHeaders(): HeadersInit | undefined {
 // matching what Caddy expects on the way back in).
 async function getJSON<T>(path: string): Promise<T> {
   const r = await fetch("api" + path, { headers: sessionHeaders() });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) throw new HttpError(r.status, r.statusText);
   return (await r.json()) as T;
 }
 
@@ -47,7 +58,7 @@ const httpApi: InspectorApi = {
     getJSON<RawTable>(`/edge?from_path=${encodeURIComponent(fromPath)}&to_path=${encodeURIComponent(toPath)}`),
   reset: async (): Promise<{ ok: boolean }> => {
     const r = await fetch("api/reset", { method: "POST", headers: sessionHeaders() });
-    if (!r.ok) throw new Error(`reset failed: ${r.status}`);
+    if (!r.ok) throw new HttpError(r.status, r.statusText);
     return (await r.json()) as { ok: boolean };
   },
 };

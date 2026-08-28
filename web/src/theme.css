@@ -1091,6 +1091,62 @@ html[data-theme="dark"] .pg-code .tok-punc {
   padding: 4px 9px;
   white-space: nowrap;
 }
+.ro-badge.bad {
+  color: #c0392b;
+  background: rgba(192, 57, 43, 0.1);
+  border-color: rgba(192, 57, 43, 0.35);
+}
+html[data-theme="dark"] .ro-badge.bad {
+  color: #ff7b6b;
+}
+
+/* connection strip: PG/CH reachability + schema, in the header */
+.conn-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.conn-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.conn-chip.ok {
+  color: var(--accent);
+}
+.conn-chip.bad {
+  color: #c0392b;
+}
+html[data-theme="dark"] .conn-chip.bad {
+  color: #ff7b6b;
+}
+.conn-chip.schema {
+  color: var(--text-dim);
+}
+
+/* full-width banners under the header: backend unreachable, or a schema hint */
+.conn-banner {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  font-size: 12px;
+  text-align: center;
+  background: rgba(192, 57, 43, 0.1);
+  color: #c0392b;
+  border-bottom: 1px solid rgba(192, 57, 43, 0.35);
+}
+html[data-theme="dark"] .conn-banner {
+  color: #ff7b6b;
+}
+.conn-banner.hint {
+  background: var(--accent-soft);
+  color: var(--text-dim);
+  border-bottom-color: var(--border);
+}
 
 /* ── empty-state card (web tree panel) ───────────────────────────────────── */
 .es-card {

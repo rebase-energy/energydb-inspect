@@ -43,12 +43,26 @@ export interface Counts {
   values: number;
 }
 
+export interface ConnectionStatus {
+  pg_ok: boolean;
+  ch_ok: boolean;
+  pg_target: string | null;
+  ch_target: string | null;
+  schema: string;
+  schema_has_tables: boolean | null;
+  pg_error: string | null;
+  ch_error: string | null;
+  env_file: string | null;
+}
+
 export interface StateVersion {
   version: string;
   counts: Counts;
   // Server only: whether the backend allows writes (the Reset button). The web
   // build has no server, so it is absent there and treated as false.
   writable?: boolean;
+  // Server only, same reason: pg/ch reachability, targets and last errors.
+  connection?: ConnectionStatus;
 }
 
 export interface SeriesValues {

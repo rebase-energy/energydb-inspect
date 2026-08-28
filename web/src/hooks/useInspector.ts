@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Counts, type Edge, type TreeNode } from "../api/client";
+import { api, HttpError, type ConnectionStatus, type Counts, type Edge, type TreeNode } from "../api/client";
 
 const EMPTY_COUNTS: Counts = { nodes: 0, edges: 0, series: 0, values: 0 };
+
+// Whether the /api/* backend itself answered, distinct from whether the
+// database it talks to is up (that's `connection`, from state-version's
+// payload). "unauthorized" only happens session-aware (embedded): the
+// backend is up but rejected our X-EDB-Session/X-EDB-Token.
+export type Reachability = "connecting" | "ok" | "unreachable" | "unauthorized";
 
 /**
  * Polls the cheap /state-version endpoint (~1s) and refetches the tree + edges
@@ -11,9 +17,15 @@ export function useInspector(autoRefresh: boolean) {
   const [version, setVersion] = useState("");
   const [counts, setCounts] = useState<Counts>(EMPTY_COUNTS);
   const [writable, setWritable] = useState(false);
+  const [connection, setConnection] = useState<ConnectionStatus | null>(null);
+  const [reachability, setReachability] = useState<Reachability>("connecting");
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [nonce, setNonce] = useState(0);
+
+  const onFetchFailed = useCallback((err: unknown) => {
+    setReachability(err instanceof HttpError && err.status === 401 ? "unauthorized" : "unreachable");
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -24,9 +36,11 @@ export function useInspector(autoRefresh: boolean) {
           setVersion(sv.version);
           setCounts(sv.counts);
           setWritable(!!sv.writable);
+          setConnection(sv.connection ?? null);
+          setReachability("ok");
         }
-      } catch {
-        /* backend not up yet, keep trying */
+      } catch (err) {
+        if (alive) onFetchFailed(err);
       }
     };
     void tick();
@@ -36,7 +50,7 @@ export function useInspector(autoRefresh: boolean) {
       alive = false;
       clearInterval(t);
     };
-  }, [autoRefresh, nonce]);
+  }, [autoRefresh, nonce, onFetchFailed]);
 
   useEffect(() => {
     let alive = true;
@@ -47,13 +61,13 @@ export function useInspector(autoRefresh: boolean) {
           setTree(t.portfolios);
           setEdges(e.edges);
         }
-      } catch {
-        /* ignore transient errors */
+      } catch (err) {
+        if (alive) onFetchFailed(err);
       }
     })();
     return () => { alive = false; };
-  }, [version, nonce]);
+  }, [version, nonce, onFetchFailed]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  return { version, counts, writable, tree, edges, refresh };
+  return { version, counts, writable, connection, reachability, tree, edges, refresh };
 }

@@ -10,7 +10,8 @@ import { useTheme } from "./hooks/useTheme";
 export default function App() {
   const { theme, toggle } = useTheme();
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const { version, counts, writable, tree, edges, refresh } = useInspector(autoRefresh);
+  const { version, counts, writable, connection, reachability, tree, edges, refresh } =
+    useInspector(autoRefresh);
 
   const onReset = async () => {
     if (!window.confirm("Reset DB? This wipes and recreates the entire energydb schema (local only).")) return;
@@ -27,6 +28,8 @@ export default function App() {
       <Header
         counts={counts}
         writable={writable}
+        connection={connection}
+        reachability={reachability}
         autoRefresh={autoRefresh}
         onToggleAuto={() => setAutoRefresh((a) => !a)}
         onRefresh={refresh}
