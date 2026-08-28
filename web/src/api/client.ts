@@ -11,9 +11,25 @@ export type {
 } from "./types";
 
 import type { InspectorApi, RawTable, SeriesValues, StateVersion, TreeNode, Edge } from "./types";
+import { getSessionCreds } from "../session";
 
+// Session headers (X-EDB-Session/X-EDB-Token), added to every /api/* call when
+// this dashboard is running session-aware (embedded, playground deployment);
+// absent entirely in standalone use (getSessionCreds() is null), unchanged.
+function sessionHeaders(): HeadersInit | undefined {
+  const creds = getSessionCreds();
+  if (!creds) return undefined;
+  return { "X-EDB-Session": creds.sessionId, "X-EDB-Token": creds.token };
+}
+
+// Deliberately RELATIVE (no leading slash): resolves against the current
+// document's own URL, so this dashboard works whether served at the origin
+// root (CLI / local dev) or under a sub-path like /inspect/ (the playground's
+// Caddy edge, which strips /inspect before forwarding to this backend --
+// relative "api/..." resolves to "/inspect/api/..." from the browser's side,
+// matching what Caddy expects on the way back in).
 async function getJSON<T>(path: string): Promise<T> {
-  const r = await fetch("/api" + path);
+  const r = await fetch("api" + path, { headers: sessionHeaders() });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return (await r.json()) as T;
 }
@@ -30,7 +46,7 @@ const httpApi: InspectorApi = {
   edgeRow: (fromPath: string, toPath: string) =>
     getJSON<RawTable>(`/edge?from_path=${encodeURIComponent(fromPath)}&to_path=${encodeURIComponent(toPath)}`),
   reset: async (): Promise<{ ok: boolean }> => {
-    const r = await fetch("/api/reset", { method: "POST" });
+    const r = await fetch("api/reset", { method: "POST", headers: sessionHeaders() });
     if (!r.ok) throw new Error(`reset failed: ${r.status}`);
     return (await r.json()) as { ok: boolean };
   },

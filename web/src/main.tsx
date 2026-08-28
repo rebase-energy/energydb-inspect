@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
+import { waitForSessionCreds } from "./session";
 
 const root = createRoot(document.getElementById("root")!);
 
@@ -16,11 +17,18 @@ if (__WASM_TARGET__ === "wasm") {
     ),
   );
 } else {
-  void import("./App").then(({ default: App }) =>
-    root.render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
+  // Session-aware embed (the playground): wait for the parent page's
+  // postMessage handshake before the first /api/* call, so every request
+  // carries X-EDB-Session/X-EDB-Token from the start. Standalone use (CLI,
+  // local dev, not inside an iframe) resolves this immediately with null --
+  // see session.ts.
+  void waitForSessionCreds().then(() =>
+    import("./App").then(({ default: App }) =>
+      root.render(
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      ),
     ),
   );
 }
